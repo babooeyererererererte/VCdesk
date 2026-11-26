@@ -72,9 +72,13 @@ func main() {
 
 	addr := os.Getenv("VCDESK_LISTEN_ADDR")
 	if addr == "" {
-		// The desktop app uses a loopback-only server. Set VCDESK_LISTEN_ADDR
-		// explicitly (for example, :8080) only when intentionally hosting LAN calls.
-		addr = "127.0.0.1:8080"
+		// Hosted platforms such as Render provide PORT and require binding to
+		// all interfaces. Local desktop builds remain loopback-only.
+		if port := os.Getenv("PORT"); port != "" {
+			addr = net.JoinHostPort("0.0.0.0", port)
+		} else {
+			addr = "127.0.0.1:8080"
+		}
 	}
 	server := &http.Server{
 		Addr:              addr,
