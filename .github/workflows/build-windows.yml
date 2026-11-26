@@ -1,0 +1,62 @@
+
+name: Build VC Desk for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Install Wails
+        shell: pwsh
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.1
+
+      - name: Build VC Desk
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$(go env GOPATH)\bin;$env:PATH"
+          go mod tidy
+          wails build -clean -platform windows/amd64 -webview2 embed -o VCDesk.exe
+
+      - name: Build signaling server
+        shell: pwsh
+        working-directory: signaling
+        run: |
+          go mod tidy
+          New-Item -ItemType Directory -Force ..\build\bin | Out-Null
+          go build -trimpath -ldflags="-s -w" -o ..\build\bin\vcdesk-signaling.exe .
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item build\bin\VCDesk.exe release\VCDesk.exe
+          Copy-Item build\bin\vcdesk-signaling.exe release\vcdesk-signaling.exe
+          Compress-Archive -Path release\* -DestinationPath VCDesk-Windows.zip -Force
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: VCDesk-Windows-x64
+          path: VCDesk-Windows.zip
