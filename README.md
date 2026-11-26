@@ -36,3 +36,15 @@ The build uses a Windows GitHub runner. The target PC needs the Microsoft Edge W
 ## Local development
 
 Requires Go 1.22+, Wails v2.10.1, and the Windows build prerequisites described in the Wails documentation. Run `wails build` from this directory. Build the signaling server from `signaling` with `go build`.
+
+## Deploy a public signaling server (Render)
+
+The repository includes a Render Blueprint and Dockerfile for hosting the signaling server. GitHub stores the code and triggers updates; it does not run a permanent WebSocket server itself.
+
+1. Sign in to Render and choose **New → Blueprint**.
+2. Connect this GitHub repository: `babooeyererererererte/VCdesk`.
+3. Render detects `render.yaml`. Review the service and create it.
+4. When deployment finishes, copy the service's HTTPS hostname. The VC Desk signaling address is that hostname changed to `wss://` and ending in `/ws` (for example, `wss://your-service.onrender.com/ws`).
+5. In VC Desk, paste that address into **Signaling server**. Everyone must use the same address and room code.
+
+The included Blueprint uses Render's free web-service plan for testing. Free services may spin down when idle, so the first connection can take a while and it is not an always-on guarantee. The signaling server is still a prototype without authentication or rate limiting; use it only for non-sensitive testing. The app currently uses public STUN servers but no TURN relay, so some network combinations may still fail to establish media.
