@@ -10,21 +10,26 @@ VC Desk is a Windows desktop application built with Go + Wails. The interface is
 - Local and remote video preview
 - Room codes and display names
 - Leave-call control and connection status/error messages
-- Separate signaling server with `/health` endpoint
+- Automatically starts and stops its bundled local signaling server
 
-## Important networking note
+## Running VC Desk
 
-The signaling server is required. `VCDesk.exe` does not magically create an internet service. For a same-computer/LAN test, run `vcdesk-signaling.exe` on one machine and enter `ws://HOST-IP:8080/ws` in both clients. For internet use, deploy the signaling server on a public host with TLS and enter its `wss://.../ws` address. Some restrictive networks also require a TURN relay; the client currently includes public STUN servers only, so a TURN service may be needed for reliable connectivity across all networks.
+Extract the complete ZIP and keep both executables in the same folder:
+- `VCDesk.exe`
+- `vcdesk-signaling.exe`
+
+Start `VCDesk.exe`. It automatically launches the bundled signaling server on `127.0.0.1:8080`, reuses an already-running local server if one is present, and stops the server it started when VC Desk closes. The local server binds to loopback only; it is not exposed to your LAN or the internet.
+
+Enter a room code and display name, then click **Join voice & video**. Both people must use the same signaling server address and room code. For calls between different computers, deploy the signaling server on a public host with TLS and enter its secure `wss://.../ws` address. The bundled local server is for same-computer testing. Some restrictive networks also require a TURN relay; the client currently includes public STUN servers only.
 
 The signaling server is a minimal prototype. Before public production deployment, add authentication, rate limiting, an explicit allowed-origin list, TLS termination, and a configured TURN service. Do not expose it publicly as-is for sensitive calls.
 
 ## Build without installing tools on the user's PC
 
-1. Create a private or public GitHub repository and upload the contents of this folder (including `.github/workflows/build-windows.yml`).
-2. Open the repository's **Actions** tab.
-3. Select **Build VC Desk for Windows** and choose **Run workflow** (or push to `main`).
-4. When the run finishes, open it and download the `VCDesk-Windows-x64` artifact.
-5. Extract `VCDesk-Windows.zip`. It contains `VCDesk.exe` and `vcdesk-signaling.exe`.
+1. Open the repository's **Actions** tab.
+2. Select **Build VC Desk for Windows** and choose **Run workflow** (or push to `main`).
+3. When the run finishes, open it and download the `VCDesk-Windows-x64` artifact.
+4. Extract `VCDesk-Windows.zip`. It contains both executables listed above.
 
 The build uses a Windows GitHub runner. The target PC needs the Microsoft Edge WebView2 Runtime, which is already present on most supported Windows 10/11 systems. If it is missing, install Microsoft's WebView2 Runtime.
 

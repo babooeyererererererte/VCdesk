@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,13 +18,31 @@ import (
 
 const maxRoomSize = 2
 
+func allowedOrigin(origin string) bool {
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme == "wails" && host == "wails" {
+		return true
+	}
+	if host == "localhost" || host == "wails.localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 var roomPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,32}$`)
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		// Deployments should put this service behind a host-level origin policy.
-		return true
+		return allowedOrigin(r.Header.Get("Origin"))
 	},
 }
 
@@ -47,8 +69,15 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok","service":"vcdesk-signaling"}`))
 	})
 	http.HandleFunc("/ws", handleWebSocket)
+
+	addr := os.Getenv("VCDESK_LISTEN_ADDR")
+	if addr == "" {
+		// The desktop app uses a loopback-only server. Set VCDESK_LISTEN_ADDR
+		// explicitly (for example, :8080) only when intentionally hosting LAN calls.
+		addr = "127.0.0.1:8080"
+	}
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              addr,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
