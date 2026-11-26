@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: vcdesk-signaling-babooeyererererererte
+    runtime: docker
+    rootDir: signaling
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
