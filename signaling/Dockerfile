@@ -3,6 +3,7 @@ WORKDIR /src
 COPY go.mod ./
 RUN go mod download
 COPY main.go ./
+RUN mkdir -p /out
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/vcdesk-signaling .
 
 FROM alpine:3.21
