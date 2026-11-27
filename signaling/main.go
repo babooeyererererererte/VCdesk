@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"bytes"
+	"fmt"
+	"io"
 	"errors"
 	"log"
 	"net"
@@ -60,6 +63,47 @@ func (c *Client) writeJSON(v any) error {
 	return c.conn.WriteJSON(v)
 }
 
+var turnRateMu sync.Mutex
+var turnRequests = map[string][]time.Time{}
+
+type cloudflareTURNResponse struct {
+  IceServers struct {
+    URLs []string `json:"urls"`
+    Username string `json:"username"`
+    Credential string `json:"credential"`
+  } `json:"iceServers"`
+}
+
+func turnCredentials(w http.ResponseWriter, r *http.Request) {
+  w.Header().Set("Access-Control-Allow-Origin", "*")
+  w.Header().Set("Cache-Control", "no-store")
+  w.Header().Set("Content-Type", "application/json")
+  if r.Method != http.MethodGet { w.Header().Set("Allow", http.MethodGet); http.Error(w, "method not allowed", 405); return }
+  if !allowTURNRequest(clientIP(r)) { http.Error(w, "rate limit exceeded", 429); return }
+  keyID, secret := os.Getenv("CLOUDFLARE_TURN_KEY_ID"), os.Getenv("CLOUDFLARE_TURN_KEY_SECRET")
+  if keyID == "" || secret == "" { http.Error(w, "TURN is not configured", 503); return }
+  body, _ := json.Marshal(map[string]int{"ttl": 86400})
+  endpoint := fmt.Sprintf("https://rtc.live.cloudflare.com/v1/turn/keys/%s/credentials/generate-ice-servers", keyID)
+  req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
+  if err != nil { http.Error(w, "could not create TURN request", 500); return }
+  req.Header.Set("Authorization", "Bearer "+secret); req.Header.Set("Content-Type", "application/json")
+  resp, err := (&http.Client{Timeout: 8*time.Second}).Do(req)
+  if err != nil { http.Error(w, "TURN provider unavailable", 502); return }; defer resp.Body.Close()
+  if resp.StatusCode < 200 || resp.StatusCode >= 300 { _, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048)); http.Error(w, "TURN credential generation failed", 502); return }
+  var result cloudflareTURNResponse
+  if err := json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&result); err != nil || result.IceServers.Username == "" || result.IceServers.Credential == "" { http.Error(w, "invalid TURN provider response", 502); return }
+  urls := make([]string, 0, len(result.IceServers.URLs)); for _, u := range result.IceServers.URLs { if !strings.Contains(u, ":53") { urls = append(urls, u) } }
+  if len(urls) == 0 { http.Error(w, "no usable TURN URLs", 502); return }
+  _ = json.NewEncoder(w).Encode(map[string]any{"turnAvailable": true, "iceServers": []any{map[string]any{"urls":"stun:stun.cloudflare.com:3478"}, map[string]any{"urls":urls,"username":result.IceServers.Username,"credential":result.IceServers.Credential}}})
+}
+
+func clientIP(r *http.Request) string { host, _, err := net.SplitHostPort(r.RemoteAddr); if err != nil { return r.RemoteAddr }; return host }
+func allowTURNRequest(ip string) bool {
+  now := time.Now(); turnRateMu.Lock(); defer turnRateMu.Unlock()
+  recent := make([]time.Time, 0, len(turnRequests[ip])); for _, t := range turnRequests[ip] { if now.Sub(t) < time.Minute { recent = append(recent, t) } }
+  if len(recent) >= 12 { turnRequests[ip] = recent; return false }; turnRequests[ip] = append(recent, now); return true
+}
+
 var roomsMu sync.Mutex
 var rooms = map[string]map[*Client]bool{}
 
@@ -69,6 +113,7 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok","service":"vcdesk-signaling"}`))
 	})
 	http.HandleFunc("/ws", handleWebSocket)
+	http.HandleFunc("/turn-credentials", turnCredentials)
 
 	addr := os.Getenv("VCDESK_LISTEN_ADDR")
 	if addr == "" {
