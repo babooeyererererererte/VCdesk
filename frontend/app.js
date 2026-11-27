@@ -13,6 +13,8 @@ const state = {
   makingOffer: false,
   ignoreOffer: false,
   pendingCandidates: [],
+  iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
+  turnAvailable: false,
 };
 
 function setStatus(message, kind = '') {
@@ -35,6 +37,20 @@ function setControls(inCall) {
   $('camBtn').disabled = !inCall;
 }
 
+async function loadIceServers() {
+  try {
+    const response = await fetch('https://vcdesk-signaling-babooeyererererererte.onrender.com/turn-credentials', { cache: 'no-store' });
+    if (!response.ok) throw new Error('TURN service HTTP ' + response.status);
+    const data = await response.json();
+    if (!Array.isArray(data.iceServers) || !data.iceServers.length) throw new Error('No ICE servers returned');
+    state.iceServers = data.iceServers; state.turnAvailable = data.turnAvailable === true; return true;
+  } catch (error) {
+    state.iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+    state.turnAvailable = false; console.warn('TURN unavailable:', error);
+    setCallInfo('TURN relay unavailable. Direct connection only; different networks may fail.'); return false;
+  }
+}
+
 async function startMedia() {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Camera access is unavailable. Check that the app is running in a supported Windows environment.');
@@ -51,11 +67,7 @@ function makePeer(initiator) {
   if (state.pc) state.pc.close();
   state.isInitiator = initiator;
   state.pendingCandidates = [];
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    ],
-  });
+  const pc = new RTCPeerConnection({ iceServers: state.iceServers, iceCandidatePoolSize: 2 });
   state.pc = pc;
   for (const track of state.stream.getTracks()) pc.addTrack(track, state.stream);
 
@@ -77,12 +89,12 @@ function makePeer(initiator) {
     else if (connectionState === 'disconnected') setStatus('Connection interrupted');
     else if (connectionState === 'failed') {
       setStatus('Connection failed', 'error');
-      setCallInfo('Connection failed. Your network may require a TURN relay.');
+      setCallInfo(state.turnAvailable ? 'Connection failed even with TURN. Check firewall restrictions.' : 'Connection failed: TURN is not configured on the server.');
     }
   };
   pc.oniceconnectionstatechange = () => {
     if (pc.iceConnectionState === 'failed') {
-      setCallInfo('ICE connection failed. A TURN relay may be required on restrictive networks.');
+      setCallInfo(state.turnAvailable ? 'ICE failed despite TURN credentials. Check network restrictions.' : 'ICE failed: no TURN relay is configured.');
     }
   };
   pc.onnegotiationneeded = async () => {
@@ -175,6 +187,7 @@ async function joinCall() {
   $('joinBtn').disabled = true;
   setCallInfo('Requesting camera and microphone permission…');
   try {
+    await loadIceServers();
     await startMedia();
     state.ws = new WebSocket(serverURL);
   } catch (error) {
