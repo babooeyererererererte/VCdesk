@@ -52,6 +52,7 @@ jobs:
           )
 
           const endpoint = "wss://vcdesk-signaling-babooeyererererererte.onrender.com/ws"
+          var testRoom string
 
           func connect(name string) *websocket.Conn {
             header := http.Header{}
@@ -62,7 +63,7 @@ jobs:
               panic(fmt.Sprintf("connect %s: %v", name, err))
             }
             conn.SetReadDeadline(time.Now().Add(20 * time.Second))
-            payload := map[string]any{"type":"join", "room":"vcdesk-smoke-test", "name":name}
+            payload := map[string]any{"type":"join", "room":testRoom, "name":name}
             if err := conn.WriteJSON(payload); err != nil { panic(err) }
             return conn
           }
@@ -77,6 +78,8 @@ jobs:
           }
 
           func main() {
+            // Use a unique room for every run so stale clients or concurrent tests cannot occupy it.
+            testRoom = fmt.Sprintf("vcdesk-smoke-%d", time.Now().UnixNano())
             first := connect("smoke-one")
             defer first.Close()
             second := connect("smoke-two")
@@ -84,7 +87,7 @@ jobs:
 
             joined := readType(first, "peer-joined")
             if joined["name"] != "smoke-two" { panic(fmt.Sprintf("unexpected peer name: %#v", joined)) }
-            offer := map[string]any{"type":"description", "room":"vcdesk-smoke-test", "name":"smoke-one", "description":map[string]any{"type":"offer","sdp":"smoke-test"}}
+            offer := map[string]any{"type":"description", "room":testRoom, "name":"smoke-one", "description":map[string]any{"type":"offer","sdp":"smoke-test"}}
             if err := first.WriteJSON(offer); err != nil { panic(err) }
             relayed := readType(second, "description")
             if relayed["name"] != "smoke-one" { panic(fmt.Sprintf("unexpected relayed sender: %#v", relayed)) }
