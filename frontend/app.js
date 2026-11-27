@@ -39,7 +39,9 @@ function setControls(inCall) {
 
 async function loadIceServers() {
   try {
-    const response = await fetch('https://vcdesk-signaling-babooeyererererererte.onrender.com/turn-credentials', { cache: 'no-store' });
+    const configuredServer = new URL($('server').value.trim());
+    const apiBase = (configuredServer.protocol === 'wss:' ? 'https:' : 'http:') + '//' + configuredServer.host;
+    const response = await fetch(apiBase + '/turn-credentials', { cache: 'no-store' });
     if (!response.ok) throw new Error('TURN service HTTP ' + response.status);
     const data = await response.json();
     if (!Array.isArray(data.iceServers) || !data.iceServers.length) throw new Error('No ICE servers returned');
